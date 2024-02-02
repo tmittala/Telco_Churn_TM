@@ -8,7 +8,6 @@ output:
     theme: cerulean
     toc: yes
     toc_float: True
-    output: "index.html"
 ---
 
 ```{r setup, include=FALSE}
@@ -235,9 +234,8 @@ summary(telco_scaled)
 
 ```
 
-# Question 1 - PCA?
+# Should we do PCA to reduce dimensionality? Why or why not?
 
-**Should we do PCA to reduce dimensionality? Why or why not?**
 Let's do a Primary Component Analysis (PCA) and see the results to determine if it will be helpful.
 
 ```{r}
@@ -277,13 +275,13 @@ The cumulative variance plot further illustrates our choice of 15 PCs.
 telco.pca_df <- as.data.frame(telco.pca$x[,1:15])
 summary(telco.pca_df)
 ```
-## Final Answer ---- edit more
+## Final Thoughts for PCA
 
 Principal Component Analysis (PCA) is a valuable technique for dimensionality reduction, particularly in scenarios where datasets exhibit high dimensionality, such as this one. In the case of the Telco Churn dataset, which involves numerous features related to customer behavior and characteristics, PCA could be considered. PCA may offer benefits such as mitigating multicollinearity, handling high-dimensional data, and potentially revealing underlying patterns. However, it is crucial to weigh these advantages against the interpretability of the original features. The Telco Churn dataset involves variables that are directly tied to customer attributes and behaviors, making their interpretability paramount. Additionally, the dataset size and the desire to maintain the specific meaning of each feature may impact the suitability of PCA. As PCA assumes linear relationships between variables, it is essential to assess whether such assumptions align with the underlying patterns in the data. A thoughtful evaluation of the trade-offs between dimensionality reduction and interpretability should guide the decision on whether to employ PCA in the Telco Churn dataset analysis.
 
 Hence, considering the Telco Churn dataset's context, where the telecom company seeks detailed insights into the specific customer profiles associated with churn, **opting against PCA may be a prudent choice.** PCA inherently transforms original features into linear combinations, potentially diluting the individual interpretability of each variable. In this scenario, maintaining the fidelity of the original features becomes paramount, as the company aims to understand the nuanced characteristics contributing to customer churn. The absence of PCA allows for a more direct examination of the relationships between individual features and churn behavior, providing a clearer and more granular understanding of the factors influencing customer decisions. This decision aligns with the company's strategic goal of tailoring retention strategies to the unique attributes of customers prone to churning, enhancing the efficacy of targeted interventions.
 
-# QUESTION 2 - K-Means Cluster Model
+# K-Means Cluster Model
 
 Let's start with finding the optimal number of clusters for this dataset. As instructed, we will use the raw data that is cleaned and scaled, and not the PCA dataset for our analysis.
 
@@ -376,56 +374,6 @@ cfmatrix
 ```
 
 Our model's performance metrics are indicative of its effectiveness in capturing relevant patterns within the data. Specifically, the model exhibits a commendable sensitivity of `r round(cfmatrix$byClass["Sensitivity"], 3)`, reflecting its ability to correctly identify instances of positive churn. However, it's crucial to note that the accuracy stands at `r round(cfmatrix$overall["Accuracy"], 3)`, underscoring the need for further exploration and potential refinement. The interplay between sensitivity and accuracy warrants a nuanced examination to optimize our model for a more balanced and reliable predictive outcome.
-
-# QUESTION 3 - OUTLIERS IN 'MONTHLY CHARGES' COLUMN
-For our univariate outlier analysis, let's check the summary of the "monthly charges" first. We will use the raw data to do outlier analysis.
-
-## Data and Visual Exploration
-```{r}
-summary(telco_raw$MonthlyCharges)
-```
-### Histogram of Monthly Charges
-```{r}
-mc_hist <- ggplot(telco_raw) + aes(x = MonthlyCharges)+ geom_histogram(bins = 30, fill = "royalblue") + theme_minimal()
-mc_hist
-```
-
-The histogram shows that monthly charges are skewed to the right which is expected as monthly charges would tend to be low for most customers. However, we don't see any specific values or patterns that may suggest presence of outlier.
-
-### Box Plot of Monthly Charges
-Utilizing a boxplot visualization allows for a quick and effective examination of potential outliers, represented as points beyond the whiskers of the plot. This analysis serves as a valuable step in uncovering irregularities in monthly charges, contributing to a comprehensive understanding of the data in general.
-
-```{r}
-mc_box <- ggplot(telco_raw) + aes(x= "", y = MonthlyCharges) + geom_boxplot(fill = "lightblue") + theme_minimal()
-mc_box
-```
-
-The box plot reveals no outliers in the monthly changes column. Let's confirm it using the IQR and the 'boxplot.stats' function. Here, any value not between $(q_0 - 1.5 IQR)$ and $(q_0.75 + 1.5 IQR)$ will be considered out of normal range.
-
-```{r}
-boxplot.stats(telco_raw$MonthlyCharges)$out
-```
-
-Upon executing the boxplot.stats function on the Telco Churn dataset's Monthly Charges column, no outliers were detected, indicating a relatively uniform distribution of monthly charges without extreme values.
-
-## Hempel Filter using MAD
-
-Implementing the Hempel Filter using the Median Absolute Deviation (MAD) for outlier detection in our dataset provides a robust method to identify and address potential anomalies. By calculating the MAD and establishing a threshold, we can systematically filter out outliers, ensuring a more accurate and resilient analysis of our data. This approach enhances the reliability of our findings by minimizing the impact of extreme values on the overall dataset.
-
-**We will consider data points as outliers if they are outside the 6-MAD range around the median of the data.**
-
-```{r}
-lower_mad_bound <- median(telco_raw$MonthlyCharges) - 3*mad(telco_raw$MonthlyCharges, constant = 1)
-upper_mad_bound <- median(telco_raw$MonthlyCharges) + 3*mad(telco_raw$MonthlyCharges, constant = 1)
-
-outlier_ind <- which(telco_raw$MonthlyCharges < lower_mad_bound | telco_raw$MonthlyCharges > upper_mad_bound)
-outlier_ind
-```
-
-Upon applying the Hempel Filter using the Median Absolute Deviation (MAD) to our dataset, no outliers were detected, affirming the robustness of this approach in maintaining data integrity. This result suggests a dataset with a consistent distribution, contributing to the reliability of our analysis.
-
-## Outlier Analysis
-Upon careful analysis, it is noteworthy that **no outliers were detected in the Monthly Charges variable**. The absence of outliers suggests a relatively homogenous distribution of monthly charges among Telco customers. This finding indicates a more consistent pattern in the pricing structure and a lack of extreme values that could potentially skew our statistical analyses.
 
 
 # Conclusion
