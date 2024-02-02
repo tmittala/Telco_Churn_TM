@@ -1,0 +1,442 @@
+---
+title: "Telco Churn Analysis"
+author: "Tushar Mittal"
+date: "Dec 12, 2023"
+output:
+  html_document:
+    highlight: tango
+    theme: cerulean
+    toc: yes
+    toc_float: True
+    output: "index.html"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+```
+
+# Introduction
+
+In this report, we will analyze the TelcoChurn dataset, which contains data on 7043 customers of a telecommunication company. The dataset has various variables that describe the customers’ service and billing information along with their usage patterns as categorical data. One of the main variables of interest is Churn, which indicates whether the customer left the company or not at the time of data collection. The goal of this report is to explore the factors that influence customer churn and to provide recommendations for improving customer retention.
+
+# Loading Required Libraries
+
+```{r}
+library(ggplot2)
+library(plotly)
+library(caret)
+library(factoextra)
+library(dplyr)
+library(fpc)
+library(dbscan)
+library(Hmisc)
+library(corrplot)
+library(missForest)
+library(cluster)
+library(knitr)
+library(FNN)
+library(solitude)
+```
+
+# Loading Data
+
+```{r}
+telco_raw <- read.csv("TelcoChurn.csv")
+
+str(telco_raw)
+telco_raw <- telco_raw[,-1] #removing first column #the column of customerID is not important so i will drop it
+```
+
+Let's see if our data has missing values.
+```{r}
+colSums(is.na(telco_raw))
+```
+
+# Imputation for Missing Values
+Upon examination, we notice that 11 customers in our dataset have missing values for "Total charges" column. This corresponds to approximately `r sprintf("%.2f%%", 100* 11 / (7043*21))` of the total values (21 * 7043 = 147903) in the dataset. Given this proportion, the impact on the overall variance is deemed minimal, whether these values are imputed or left as is. Consequently, opting for a sophisticated imputation method is considered unnecessary. Instead, a pragmatic approach is taken by choosing to impute these missing values with complete case imputation. This decision serves to simplify the process, reducing computational complexity and resource requirements.
+
+```{r}
+telco_imp <- na.omit(telco_raw)
+str(telco_imp)
+```
+
+# Preliminary Data Visualization
+
+We kick off our analysis with a visual exploration of key variables in the TelcoChurn dataset. Let's begin by examining the data through informative visualizations to uncover initial insights and patterns that may illuminate the factors influencing customer churn. This will be essential in formulating initial hypotheses for our data and predictions.
+
+## Target Column - Churn
+
+Let's see the value counts of our target or reference.
+
+```{r}
+props <- as.data.frame(prop.table(table(telco_imp$Churn))*100)
+colnames(props) <- c("Churn Status", "Percentage")
+props
+
+# Create a bar plot 
+ggplot(props, aes(x = `Churn Status`, y = Percentage, fill = `Churn Status`)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Churn Rate",
+       x = "Churn Status",
+       y = "Percentage") +
+    scale_fill_manual(values = c("lightgreen", "steelblue"))
+
+```
+
+Here, we can see that the churn rate is about 26.54% in our actual dataset.
+
+## Total Charges, Monthly Charges and Tenure - Churn Rate Plot 
+
+```{r}
+plot_tc <- ggplot(telco_imp, aes(x = TotalCharges, fill = Churn)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plot of Total Charges by Churn Status",
+       x = "Total Charges",
+       y = "Density") +
+  scale_fill_manual(values = c("No" = "green", "Yes" = "steelblue"))
+
+plot_mc <- ggplot(telco_imp, aes(x = MonthlyCharges, fill = Churn)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plot of Monthly Charges by Churn Status",
+       x = "Monthly Charges",
+       y = "Density") +
+  scale_fill_manual(values = c("No" = "green", "Yes" = "steelblue"))
+
+plot_tenure <- ggplot(telco_imp, aes(x = tenure, fill = Churn)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plot of Tenure by Churn Status",
+       x = "Tenure",
+       y = "Density") +
+  scale_fill_manual(values = c("No" = "green", "Yes" = "steelblue"))
+
+annotations <- list( 
+  list( 
+    x = 0.15,  
+    y = -0.1,  
+    text = "Total Charges ($)",  
+    xref = "paper",  
+    yref = "paper",  
+    xanchor = "center",  
+    yanchor = "bottom",  
+    showarrow = FALSE 
+  ),  
+  list( 
+    x = 0.5,  
+    y = -0.1,  
+    text = "Monthly Charges ($)",  
+    xref = "paper",  
+    yref = "paper",  
+    xanchor = "center",  
+    yanchor = "bottom",  
+    showarrow = FALSE 
+  ),  
+  list( 
+    x = 0.84,  
+    y = -0.1,  
+    text = "Tenure (in months)",  
+    xref = "paper",  
+    yref = "paper",  
+    xanchor = "center",  
+    yanchor = "bottom",  
+    showarrow = FALSE 
+  )
+)
+
+plotly::subplot(plot_tc, plot_mc, plot_tenure) %>%
+  layout(annotations = annotations, title = "Density of Churn Across Total Charges, Monthly Charges, and Tenure", titlefont = list(size = 16))
+```
+
+## Churn Rate by Senior Citizens
+
+```{r}
+seniors <- as.factor(telco_imp$SeniorCitizen)
+
+ggplot(telco_imp, aes(x = seniors, fill = Churn)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Churn Rate by SeniorCitizen",
+       x = "Senior Citizen",
+       y = "Count") +
+  scale_fill_manual(values = c("No" = "lightgreen", "Yes" = "steelblue"))
+```
+## Churn Rate by Contract Type
+
+```{r}
+ggplot(telco_imp, aes(x = Contract, fill = Churn)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Churn Rate by Contract Type",
+       x = "Contract Type",
+       y = "Count") +
+    scale_fill_manual(values = c("No" = "lightgreen", "Yes" = "steelblue"))
+```
+
+## Churn Rate by Gender
+
+```{r}
+ggplot(telco_imp, aes(x = gender, fill = Churn)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Churn Rate by Gender",
+       x = "Gender",
+       y = "Count") +
+  scale_fill_manual(values = c("No" = "lightgreen", "Yes" = "steelblue"))
+```
+
+
+# Initial Hypothesis
+
+Analyzing the above data visualizations, we can make the following initial hypothses:
+
+- **Gender Influence:** Gender appears to have a negligible impact on churn rates.
+- **Seniority Impact:** The churn rate for senior citizens is approximately twice as high compared to younger demographics.
+- **Contract Duration:** Customers opting for month-to-month contracts exhibit higher churn rates in contrast to those with yearly contracts.
+- **Monthly and Total Charges Dynamics:** A notable trend indicates that the churn rate tends to increase when monthly charges are high. However, customers with higher total charges seem to be less inclined to leave the company.
+- **Tenure:** Customers with longer tenure are less inclined to leave the company as well.
+
+These hypotheses provide a preliminary foundation for further investigation and analysis.
+
+# Data Cleaning, Variable Selection, and Scaling The Data
+Now that we have established our initial hypothesis using the raw data, we can start our analysis.
+Next, we'll streamline our dataset for unsupervised learning models by excluding the dependent variables. 
+We will, however, later use the ChurnYes variable, which is a binary variable indicating whether the customer left the company or not, in the confusion matrix analysis as reference.\
+
+To enhance our dataset's suitability for cluster analysis, we'll also transform categorical/factor variables into dummy variables. This not only ensures compatibility but also facilitates the scaling process for subsequent analysis.
+
+```{r}
+telco_clean <- subset(telco_imp, select = -c(Churn, ChurnYes))
+telco_clean <- as.data.frame(model.matrix(~ . - 1, data = telco_clean))
+str(telco_clean)
+```
+
+```{r}
+colSums(is.na(telco_clean)) #checking
+```
+
+Great, we have taken care of missing values and have also converted all factor/categorical variables into dummy variables. \
+**However, we do see that there are spaces and characters(parentheses) that R might find unusual. This may cause errors in our analysis and coding later on. Let's take care of it now.**
+
+```{r}
+colnames(telco_clean) <- gsub("\\(automatic\\)", "", colnames(telco_clean)) #the word automatic adds no meaning or value to payment method variable
+colnames(telco_clean) <- gsub(" ","_",colnames(telco_clean)) #sustituting space with underscore
+str(telco_clean)
+```
+
+## Min-Max Scaling
+**Given the diverse range of categorical (dummy) variables, min-max scaling is employed to transform these features into a common scale, ensuring each variable contributes equally to our analyses. This normalization technique brings uniformity to the data, preventing the undue influence of variables with different scales and fostering more robust and reliable results in subsequent analyses**
+
+```{r}
+normalize <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x)))
+}
+
+telco_scaled <- as.data.frame(lapply(telco_clean, normalize))
+
+summary(telco_scaled)
+
+```
+
+# Question 1 - PCA?
+
+**Should we do PCA to reduce dimensionality? Why or why not?**
+Let's do a Primary Component Analysis (PCA) and see the results to determine if it will be helpful.
+
+```{r}
+dim(telco_scaled)
+```
+This shows that our dataset has 7032 rows and 31 variables as of now.
+
+## Primary Component Analysis (PCA)
+We will perform a PCA and select the number of principal components that explain about 90% of the total variance in the data. This will allow us to reduce the dimensionality and complexity of the data while retaining most of the information.
+```{r}
+telco.pca <- prcomp(telco_scaled)
+summary(telco.pca)
+```
+
+In the above summary, we see that we can obtain about 90% of the variance using 15 Primary components. We have effectively reduced our dataset from 31 columns to 15. Let's create a new dataset with these 15 PCs for our analysis.
+
+## PCA Visualization
+
+```{r}
+library(ggbiplot)
+ggbiplot(telco.pca)
+```
+
+Here we see that ContractTwo_year, DependentsYes, PhoneServiceYes, PaymentMethods, along with some other variables contribute the highest to PC1. Given that PC1 alone explains about 30.1% of the variance in our dataset, we can also say that these variables are substantial in characterizing our customers.
+
+## Cumulative Variance Plot
+```{r}
+cumulativepro <- cumsum(telco.pca$sdev^2 / sum(telco.pca$sdev^2))
+plot(cumulativepro, type = "l", xlab = "PC #", ylab = "Amount of explained variance", main = "Cumulative variance plot")
+abline(h = 0.9, col="blue", lty=5)
+```
+
+The cumulative variance plot further illustrates our choice of 15 PCs.
+
+## PCA Dataframe
+```{r}
+telco.pca_df <- as.data.frame(telco.pca$x[,1:15])
+summary(telco.pca_df)
+```
+## Final Answer ---- edit more
+
+Principal Component Analysis (PCA) is a valuable technique for dimensionality reduction, particularly in scenarios where datasets exhibit high dimensionality, such as this one. In the case of the Telco Churn dataset, which involves numerous features related to customer behavior and characteristics, PCA could be considered. PCA may offer benefits such as mitigating multicollinearity, handling high-dimensional data, and potentially revealing underlying patterns. However, it is crucial to weigh these advantages against the interpretability of the original features. The Telco Churn dataset involves variables that are directly tied to customer attributes and behaviors, making their interpretability paramount. Additionally, the dataset size and the desire to maintain the specific meaning of each feature may impact the suitability of PCA. As PCA assumes linear relationships between variables, it is essential to assess whether such assumptions align with the underlying patterns in the data. A thoughtful evaluation of the trade-offs between dimensionality reduction and interpretability should guide the decision on whether to employ PCA in the Telco Churn dataset analysis.
+
+Hence, considering the Telco Churn dataset's context, where the telecom company seeks detailed insights into the specific customer profiles associated with churn, **opting against PCA may be a prudent choice.** PCA inherently transforms original features into linear combinations, potentially diluting the individual interpretability of each variable. In this scenario, maintaining the fidelity of the original features becomes paramount, as the company aims to understand the nuanced characteristics contributing to customer churn. The absence of PCA allows for a more direct examination of the relationships between individual features and churn behavior, providing a clearer and more granular understanding of the factors influencing customer decisions. This decision aligns with the company's strategic goal of tailoring retention strategies to the unique attributes of customers prone to churning, enhancing the efficacy of targeted interventions.
+
+# QUESTION 2 - K-Means Cluster Model
+
+Let's start with finding the optimal number of clusters for this dataset. As instructed, we will use the raw data that is cleaned and scaled, and not the PCA dataset for our analysis.
+
+### Optimal Cluster Size
+
+```{r}
+fviz_nbclust(telco_scaled, kmeans, method = "silhouette")
+fviz_nbclust(telco_scaled, kmeans, method = "wss")
+fviz_nbclust(telco.pca_df, kmeans, method = "gap_stat", nboot=10)
+```
+
+Here, we see that Silhoutte method recommends an optimal cluster size of 2. The WSS method also has an elbow at 2 clusters. However, the gap stat method recommends a cluster size of 3. Let's visualize our cluster to see if **3 clusters** make sense for our data.
+
+### K-Means Cluster Visualization - 2 Clusters
+```{r}
+set.seed(12345)
+
+km <- kmeans(telco_scaled, 3)
+
+fviz_cluster(km, data = telco_scaled)  ## cluster visualization
+```
+
+Upon examining our clustered data, it becomes apparent that clusters 1 and 3 exhibit some degree of overlap, hinting at potential similarities or shared characteristics. Despite this, the overall distinctiveness of the clusters remains discernible.\
+Let's visualize our cluster to see if **2 clusters** make sense for our data.
+
+### K-Means Cluster Visualization
+```{r}
+km2 <- kmeans(telco_scaled, 2)
+
+fviz_cluster(km2, data = telco_scaled)  ## cluster visualization
+```
+
+The visual inspection of our clusters indeed reveals distinct patterns, suggesting meaningful segmentations within our dataset. However, given the substantial size of our dataset, **opting for 3 clusters seems appropriate.** This choice allows for a nuanced characterization of our customer base, leveraging the additional granularity provided by a higher number of clusters. The decision to proceed with three clusters is driven by the aim to glean richer insights into customer behavior, fostering a more detailed and comprehensive understanding that aligns with the diverse profiles present in our data.
+
+## K- Means Cluster Interpretation
+
+For our interpretation and understanding of customer groups, let's look at the raw numerical averages, before scaling, of different variables. This will help us build customer profiles based on different clusters and identify certain clusters that may be "churn-sensitive".
+```{r}
+table(km$cluster)
+
+telco_imp$cluster <- km$cluster
+
+result <- telco_imp %>%
+  group_by(cluster) %>%
+  dplyr::summarize(across(where(is.numeric), mean, na.rm = TRUE),
+            across(where(is.character), ~names(which.max(table(.))))
+            )
+print(result)
+```
+
+Here, examining the average values within each cluster unveils **distinctive cluster characteristics**:
+
+| Cluster | Count | Key Insights |
+|:-------:|:-----:|:------------:|
+|    1    | 803 Customers | Cluster 1 primarily comprises a **relatively lower concentration of senior citizens** and **relatively newer customers with the shortest tenure**. These individuals have the **lowest average monthly charges** compared to other clusters and also demonstrate the **lowest average total charges**, indicating minimal spending with the company. Typically, these customers are not enrolled in **paperless billing**, prefer **mailed checks for payment**, and often have a **single phone line with no internet service** through Telcom. They are likely to have a **month-to-month contract** and be **single males without dependents or a partner**. |
+|    2    | 5512 Customers | Cluster 2 is characterized by the **highest churn rate**, a **relatively higher concentration of senior citizens** and **slightly older customers with better tenure than those in Cluster 1**. On average, these customers have the **highest monthly charges and total charges** compared to other clusters. They tend to prefer **paperless billing** and often pay through **Electronic Check**. Additionally, they typically have **more than one phone line** and subscribe to **internet services through Telcom**. These customers are likely to have a **month-to-month contract** and be **single males without dependents or a partner**. |
+|    3    | 717 Customers | Cluster 3 exhibits the **lowest concentration of senior citizens** and **the oldest customers with the highest tenure**. On average, these customers have **lower monthly charges** compared to other clusters and comparatively **lower total charges**. Similar to Cluster 1, they are not typically enrolled in **paperless billing** and often pay through **mailed checks**. They usually have **two year contracts** and a **single phone line and no internet service** through Telcom. These customers are likely to be **females with dependents or a partner**. |
+
+## Churn Likely Customers
+
+In our analysis, we have identified Cluster 2 as having the highest churn rate among the three clusters. This cluster stands out as it comprises customers who exhibit certain characteristics that make them more prone to churn. Understanding the profile of churn-sensitive customers is crucial for Telcom to implement targeted strategies aimed at customer retention.
+
+### Cluster 2 Characteristics:
+- **Demographics:** This cluster shows a relatively higher concentration of senior citizens and customers with better tenure than those in other clusters.
+- **Billing Preferences:** Customers in this cluster tend to prefer paperless billing and often choose to pay through Electronic Check.
+- **Service Subscriptions:** Cluster 2 customers typically have more than one phone line and subscribe to internet services through Telcom.
+- **Financial Behavior:** On average, customers in this cluster have the highest monthly charges and total charges compared to other clusters.
+
+**This somewhat aligns with our initial hypothesis that senior citizen customers with high monthly charges are more likely to churn than other customers. We do see that our initial hypothesis that customers with high total charges are less inclined to churn is not correct, as per our k-means model. We also hypothesized that customers with month to month contract have higher churn tendency which is confirmed by our model.**
+
+### Building the Churn-Sensitive Customer Profile:
+Based on the characteristics of Cluster 2, Telcom can identify key attributes associated with customers more likely to churn:
+1. **Age Factor:** Senior citizens and older customers within this cluster might be more sensitive to service changes or pricing, requiring tailored communication and incentives.
+2. **Billing and Payment Preferences:** The preference for paperless billing and electronic payment methods indicates a technological inclination. Telcom can explore personalized digital communication channels for this segment.
+3. **Service Subscription Impact:** Customers with multiple phone lines and internet services may have higher expectations. Offering targeted promotions or service enhancements can address their needs.
+
+
+By recognizing these patterns and understanding the distinct behaviors of Cluster 2, Telcom can implement targeted retention strategies. This may include personalized communications, loyalty programs, or special offers to mitigate churn risk among customers with similar characteristics.
+
+## Confusion Matrix
+
+Let's test the accuracy and sensitivity of our model using a confusion matrix.
+
+```{r}
+pred <- ifelse(telco_imp$cluster == 2, "Churn", "No Churn")
+actual <- ifelse(telco_imp$ChurnYes == 1,  "Churn", "No Churn")
+
+cfmatrix <- confusionMatrix(data = factor(pred), reference = factor(actual))
+cfmatrix
+```
+
+Our model's performance metrics are indicative of its effectiveness in capturing relevant patterns within the data. Specifically, the model exhibits a commendable sensitivity of `r round(cfmatrix$byClass["Sensitivity"], 3)`, reflecting its ability to correctly identify instances of positive churn. However, it's crucial to note that the accuracy stands at `r round(cfmatrix$overall["Accuracy"], 3)`, underscoring the need for further exploration and potential refinement. The interplay between sensitivity and accuracy warrants a nuanced examination to optimize our model for a more balanced and reliable predictive outcome.
+
+# QUESTION 3 - OUTLIERS IN 'MONTHLY CHARGES' COLUMN
+For our univariate outlier analysis, let's check the summary of the "monthly charges" first. We will use the raw data to do outlier analysis.
+
+## Data and Visual Exploration
+```{r}
+summary(telco_raw$MonthlyCharges)
+```
+### Histogram of Monthly Charges
+```{r}
+mc_hist <- ggplot(telco_raw) + aes(x = MonthlyCharges)+ geom_histogram(bins = 30, fill = "royalblue") + theme_minimal()
+mc_hist
+```
+
+The histogram shows that monthly charges are skewed to the right which is expected as monthly charges would tend to be low for most customers. However, we don't see any specific values or patterns that may suggest presence of outlier.
+
+### Box Plot of Monthly Charges
+Utilizing a boxplot visualization allows for a quick and effective examination of potential outliers, represented as points beyond the whiskers of the plot. This analysis serves as a valuable step in uncovering irregularities in monthly charges, contributing to a comprehensive understanding of the data in general.
+
+```{r}
+mc_box <- ggplot(telco_raw) + aes(x= "", y = MonthlyCharges) + geom_boxplot(fill = "lightblue") + theme_minimal()
+mc_box
+```
+
+The box plot reveals no outliers in the monthly changes column. Let's confirm it using the IQR and the 'boxplot.stats' function. Here, any value not between $(q_0 - 1.5 IQR)$ and $(q_0.75 + 1.5 IQR)$ will be considered out of normal range.
+
+```{r}
+boxplot.stats(telco_raw$MonthlyCharges)$out
+```
+
+Upon executing the boxplot.stats function on the Telco Churn dataset's Monthly Charges column, no outliers were detected, indicating a relatively uniform distribution of monthly charges without extreme values.
+
+## Hempel Filter using MAD
+
+Implementing the Hempel Filter using the Median Absolute Deviation (MAD) for outlier detection in our dataset provides a robust method to identify and address potential anomalies. By calculating the MAD and establishing a threshold, we can systematically filter out outliers, ensuring a more accurate and resilient analysis of our data. This approach enhances the reliability of our findings by minimizing the impact of extreme values on the overall dataset.
+
+**We will consider data points as outliers if they are outside the 6-MAD range around the median of the data.**
+
+```{r}
+lower_mad_bound <- median(telco_raw$MonthlyCharges) - 3*mad(telco_raw$MonthlyCharges, constant = 1)
+upper_mad_bound <- median(telco_raw$MonthlyCharges) + 3*mad(telco_raw$MonthlyCharges, constant = 1)
+
+outlier_ind <- which(telco_raw$MonthlyCharges < lower_mad_bound | telco_raw$MonthlyCharges > upper_mad_bound)
+outlier_ind
+```
+
+Upon applying the Hempel Filter using the Median Absolute Deviation (MAD) to our dataset, no outliers were detected, affirming the robustness of this approach in maintaining data integrity. This result suggests a dataset with a consistent distribution, contributing to the reliability of our analysis.
+
+## Outlier Analysis
+Upon careful analysis, it is noteworthy that **no outliers were detected in the Monthly Charges variable**. The absence of outliers suggests a relatively homogenous distribution of monthly charges among Telco customers. This finding indicates a more consistent pattern in the pricing structure and a lack of extreme values that could potentially skew our statistical analyses.
+
+
+# Conclusion
+In this analysis, we applied the k-means clustering algorithm to the TelcoChurn dataset, which contains data on 7043 customers of a telecommunication company. The dataset has various variables that describe the customers’ service, billing, and payment information along with some usage data. The goal of this analysis is to explore the factors that influence customer churn and to provide recommendations for improving customer retention.
+
+Before applying the k-means algorithm, we performed some data preprocessing steps, such as removing 11 customers with missing values for Total charges, converting the categorical variables into dummy variables, and scaling the numeric variables using min-max scaling. We then used the gap stat, silhoutte, and wss (elbow) method to determine the optimal number of clusters, which was 3. We assigned each customer to one of the three clusters based on their similarity to the cluster centroids.
+
+We also analyzed the characteristics of each cluster and found some key insights that can help us understand the customer behavior and preferences.
+Based on these findings, we can make some recommendations for improving customer retention and satisfaction. For the first cluster, we suggest that the company should offer more incentives and discounts for loyal customers, such as free upgrades, rewards, or referrals. The company should also provide more options and flexibility for the internet service, such as different plans, speeds, or features. The company should also communicate more frequently and effectively with these customers, such as sending personalized emails, surveys, or feedback requests. For the second cluster, we suggest that the company should promote and educate the customers about the benefits and features of the internet service, such as convenience, entertainment, or security. The company should also offer some trial or introductory offers for the internet service, such as free or discounted periods, or bundles with other services. The company should also maintain and improve the quality and reliability of the phone service, such as reducing dropped calls, improving coverage, or providing customer support.
+
+We evaluated the performance of our model using two metrics: accuracy and sensitivity. Accuracy measures how well the model can correctly classify the customers into their respective clusters, while sensitivity measures how well the model can identify the customers who churned. Our model achieved an accuracy of 44.98% and a sensitivity of 93.95%. This means that our model can correctly cluster about 45% of all the customers, and can detect about 94% of the customers who left the company.
+
+In conclusion, the k-means clustering algorithm provided a useful way to segment the customers based on their characteristics and behavior. However, the model had a low accuracy rate, which suggests that there is room for improvement. A larger and more diverse dataset could help to train the model better and capture more variation in the customer behavior. We could also experiment with different clustering algorithms and models with a larger dataset.
+
