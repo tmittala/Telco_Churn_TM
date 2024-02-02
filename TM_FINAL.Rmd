@@ -340,7 +340,7 @@ Here, examining the average values within each cluster unveils **distinctive clu
 |    2    | 5512 Customers | Cluster 2 is characterized by the **highest churn rate**, a **relatively higher concentration of senior citizens** and **slightly older customers with better tenure than those in Cluster 1**. On average, these customers have the **highest monthly charges and total charges** compared to other clusters. They tend to prefer **paperless billing** and often pay through **Electronic Check**. Additionally, they typically have **more than one phone line** and subscribe to **internet services through Telcom**. These customers are likely to have a **month-to-month contract** and be **single males without dependents or a partner**. |
 |    3    | 717 Customers | Cluster 3 exhibits the **lowest concentration of senior citizens** and **the oldest customers with the highest tenure**. On average, these customers have **lower monthly charges** compared to other clusters and comparatively **lower total charges**. Similar to Cluster 1, they are not typically enrolled in **paperless billing** and often pay through **mailed checks**. They usually have **two year contracts** and a **single phone line and no internet service** through Telcom. These customers are likely to be **females with dependents or a partner**. |
 
-## Churn Likely Customers
+# Churn Likely Customers
 
 In our analysis, we have identified Cluster 2 as having the highest churn rate among the three clusters. This cluster stands out as it comprises customers who exhibit certain characteristics that make them more prone to churn. Understanding the profile of churn-sensitive customers is crucial for Telcom to implement targeted strategies aimed at customer retention.
 
